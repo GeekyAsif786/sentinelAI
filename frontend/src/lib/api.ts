@@ -123,12 +123,84 @@ import {
 // ─── API Configuration ─────────────────────────────────────────────
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-const DEV_TOKEN_KEY = "sentinel_dev_token_v2";
+export const AUTH_TOKEN_KEY = "sentinel_auth_token";
+export const USER_INFO_KEY = "sentinel_user_info";
 const USE_MOCK_FALLBACK = true; // Fallback to mock data if backend is unavailable
 
+export interface UserSession {
+  email: string;
+  display_name: string;
+  roles: string[];
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  email: string;
+  display_name: string;
+  roles: string[];
+}
+
+export async function registerUser(email: string, password: string, displayName: string): Promise<AuthResponse> {
+  const response = await fetch(`${apiBaseUrl}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, display_name: displayName }),
+  });
+  if (!response.ok) {
+    let message = "Registration failed";
+    try {
+      const err = await response.json() as { detail?: string };
+      if (err.detail) message = err.detail;
+    } catch {}
+    throw new Error(message);
+  }
+  const data = (await response.json()) as AuthResponse;
+  localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+  localStorage.setItem(
+    USER_INFO_KEY,
+    JSON.stringify({ email: data.email, display_name: data.display_name, roles: data.roles })
+  );
+  return data;
+}
+
+export async function loginUser(email: string, password: string): Promise<AuthResponse> {
+  const response = await fetch(`${apiBaseUrl}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!response.ok) {
+    let message = "Login failed";
+    try {
+      const err = await response.json() as { detail?: string };
+      if (err.detail) message = err.detail;
+    } catch {}
+    throw new Error(message);
+  }
+  const data = (await response.json()) as AuthResponse;
+  localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+  localStorage.setItem(
+    USER_INFO_KEY,
+    JSON.stringify({ email: data.email, display_name: data.display_name, roles: data.roles })
+  );
+  return data;
+}
+
+export function logoutUser(): void {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(USER_INFO_KEY);
+  sessionStorage.removeItem("sentinel_dev_token_v2");
+}
+
 async function getDevToken(): Promise<string> {
-  const cached = sessionStorage.getItem(DEV_TOKEN_KEY);
-  if (cached) return cached;
+  // Check user-authenticated token first
+  const userToken = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (userToken) return userToken;
+
+  // Fallback to dev token
+  const cachedDev = sessionStorage.getItem("sentinel_dev_token_v2");
+  if (cachedDev) return cachedDev;
 
   const response = await fetch(`${apiBaseUrl}/auth/dev-token`, {
     method: "POST",
@@ -137,7 +209,7 @@ async function getDevToken(): Promise<string> {
     throw new Error(`Failed to obtain dev token: ${response.status}`);
   }
   const data = (await response.json()) as { access_token: string };
-  sessionStorage.setItem(DEV_TOKEN_KEY, data.access_token);
+  sessionStorage.setItem("sentinel_dev_token_v2", data.access_token);
   return data.access_token;
 }
 

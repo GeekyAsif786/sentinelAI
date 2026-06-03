@@ -4,6 +4,7 @@ import {
   Database,
   GitBranch,
   LayoutDashboard,
+  LogOut,
   Network,
   Radar,
   Shield,
@@ -22,7 +23,9 @@ export type TabId =
 interface SidebarProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
+  onLogout?: () => void;
 }
+
 
 interface NavItem {
   id: TabId;
@@ -40,7 +43,7 @@ const navItems: NavItem[] = [
   { id: "ai-analyst", label: "AI", icon: <Bot size={20} /> },
 ];
 
-export function Sidebar({ activeTab, onTabChange }: SidebarProps): JSX.Element {
+export function Sidebar({ activeTab, onTabChange, onLogout }: SidebarProps): JSX.Element {
   return (
     <aside className="sidebar" aria-label="Primary navigation">
       <div className="sidebar-brand">
@@ -63,11 +66,17 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps): JSX.Element {
         ))}
       </nav>
 
-      <div className="sidebar-footer">
+      <div className="sidebar-footer" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         <button className="nav-btn" title="System status" type="button">
           <Activity size={18} />
           <span>Status</span>
         </button>
+        {onLogout && (
+          <button className="nav-btn" title="Logout" type="button" onClick={onLogout}>
+            <LogOut size={18} />
+            <span>Logout</span>
+          </button>
+        )}
       </div>
     </aside>
   );
