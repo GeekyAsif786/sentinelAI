@@ -193,17 +193,21 @@ def test_is_external_service_identifies_common_external_ports() -> None:
 
     service_smtp = MagicMock()
     service_smtp.port = 25
-    assert _is_external_service(service_smtp) is False
+    assert _is_external_service(service_smtp) is True
+
+    service_arbitrary = MagicMock()
+    service_arbitrary.port = 12345
+    assert _is_external_service(service_arbitrary) is False
 
 
 def test_is_external_service_identifies_high_port_services() -> None:
     service_high = MagicMock()
     service_high.port = 8000
-    assert _is_external_service(service_high) is True
+    assert _is_external_service(service_high) is False
 
     service_higher = MagicMock()
     service_higher.port = 9999
-    assert _is_external_service(service_higher) is True
+    assert _is_external_service(service_higher) is False
 
 
 def test_handle_scan_error_sets_status_and_error() -> None:

@@ -17,6 +17,7 @@ class ProjectedGraphRecord:
     service_id: str
     host_node_id: str
     service_node_id: str
+    service_protocol: str
 
 
 class InventoryGraphProjection:
@@ -43,7 +44,7 @@ class InventoryGraphProjection:
                 break
 
             for service in sorted(host.services, key=lambda service: service.port):
-                service_node_id = f"service:{host.primary_ip}:{service.port}"
+                service_node_id = f"service:{host.primary_ip}:{service.port}:{service.protocol}"
                 service_label = f"{service.service_name or service.protocol} {service.port}/{service.protocol}"
                 service_risk = self._service_risk(host_risk, service.exposure)
                 if self._append_node(nodes, service_node_id, service_label, "Service", service_risk, max_nodes):
@@ -100,7 +101,7 @@ class InventoryGraphProjection:
                         service_node_id=record.service_node_id,
                         service_label=record.service_node_id,
                         service_port=record.service_id,
-                        service_protocol="tcp",
+                        service_protocol=record.service_protocol,
                     )
         except Exception:
             driver.close()
@@ -119,7 +120,8 @@ class InventoryGraphProjection:
                         host_id=str(host.primary_ip),
                         service_id=f"{service.port}/{service.protocol}",
                         host_node_id=host_node_id,
-                        service_node_id=f"service:{host.primary_ip}:{service.port}",
+                        service_node_id=f"service:{host.primary_ip}:{service.port}:{service.protocol}",
+                        service_protocol=service.protocol,
                     )
                 )
         return records

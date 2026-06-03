@@ -1,15 +1,25 @@
 from datetime import UTC, datetime
 from ipaddress import ip_network
+import asyncio
+from typing import Any
+
+import celery.exceptions
+import structlog
 
 from sqlalchemy import and_, select
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.discovery.nmap import NmapDiscoveryProvider, NmapXmlParseError
 from app.graph.projection import InventoryGraphProjection
 from app.models import Finding, GraphProjectionJob, Host, ScanRun, Service
 from app.schemas.scans import ScanStatus
+from app.services.cve import NvdCveClient, CveData
+from app.services.epss import EpssClient, EpssData
 from app.worker import celery_app
+
+logger = structlog.get_logger()
 
 
 @celery_app.task(name="execute_scan_from_queue", bind=True, max_retries=3)
@@ -33,6 +43,8 @@ def execute_scan_from_queue(self) -> dict[str, object]:
 
         return _execute_nmap_scan(session, scan_run, self.request.hostname)
 
+    except celery.exceptions.Retry:
+        raise
     except Exception as exc:
         self.retry(exc=exc, countdown=60)
         return {"status": "error", "message": str(exc)}
@@ -65,6 +77,8 @@ def _execute_nmap_scan(session, scan_run: ScanRun, worker_node_id: str | None = 
         discovery_result = provider.execute_nmap(targets, profile_config)
 
         _persist_discovery_result(session, scan_run, discovery_result)
+
+        _enrich_findings_with_cve_data(session, scan_run)
 
         scan_run.status = ScanStatus.completed.value
         scan_run.completed_at = datetime.now(UTC)
@@ -163,6 +177,11 @@ def _persist_discovery_result(session, scan_run: ScanRun, discovery_result) -> N
     session.commit()
 
 
+EXTERNAL_PORTS: set[int] = {
+    21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 3306, 3389, 5432, 6379, 8080, 8443, 27017
+}
+
+
 def _is_external_service(service) -> bool:
     """Heuristic to determine if service is externally exposed.
 
@@ -172,8 +191,7 @@ def _is_external_service(service) -> bool:
     Returns:
         True if service appears externally exposed
     """
-    external_ports = {22, 80, 443, 3306, 5432, 6379, 8080, 8443}
-    return service.port in external_ports or service.port >= 8000
+    return service.port in EXTERNAL_PORTS
 
 
 def _trigger_graph_projection(session, scan_run: ScanRun) -> None:
@@ -274,3 +292,47 @@ def project_inventory_graph(scan_run_id: str | None = None) -> dict[str, object]
         }
     finally:
         session.close()
+
+
+async def _fetch_enrichment_data(
+    cve_ids: list[str],
+) -> tuple[dict[str, CveData], dict[str, EpssData]]:
+    settings = get_settings()
+    cve_client = NvdCveClient(api_key=settings.nvd_api_key)
+    epss_client = EpssClient()
+
+    # Run fetch_cves and fetch_epss in parallel
+    cve_task = cve_client.fetch_cves(cve_ids)
+    epss_task = epss_client.fetch_epss(cve_ids)
+
+    return await asyncio.gather(cve_task, epss_task)
+
+
+def _enrich_findings_with_cve_data(session: Any, scan_run: ScanRun) -> None:
+    """Enrich scan run findings with CVE data (CVSS and EPSS scores)."""
+    findings = session.scalars(
+        select(Finding).where(Finding.scan_run_id == scan_run.id)
+    ).all()
+
+    if not findings:
+        return
+
+    cve_ids = list({f.cve_id for f in findings if f.cve_id})
+    if not cve_ids:
+        return
+
+    try:
+        cve_results, epss_results = asyncio.run(_fetch_enrichment_data(cve_ids))
+    except Exception as e:
+        logger.exception("Failed to fetch enrichment data in parallel", error=str(e))
+        return
+
+    for finding in findings:
+        if finding.cve_id:
+            cve_info = cve_results.get(finding.cve_id)
+            if cve_info:
+                finding.cvss_score = cve_info.cvss_score
+
+            epss_info = epss_results.get(finding.cve_id)
+            if epss_info:
+                finding.epss_probability = epss_info.epss_probability

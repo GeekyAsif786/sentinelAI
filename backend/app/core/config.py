@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     ai_enabled: bool = False
     ai_provider: str = "disabled"
     cors_origins: list[str] = ["http://localhost:5173"]
+    nvd_api_key: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

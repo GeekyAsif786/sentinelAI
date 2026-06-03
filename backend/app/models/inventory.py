@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, CIDR, INET, JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -195,6 +195,9 @@ class Finding(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text)
     evidence: Mapped[dict[str, object]] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(40), index=True)
+    cve_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    cvss_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    epss_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
