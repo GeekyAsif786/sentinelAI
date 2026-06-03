@@ -1,0 +1,36 @@
+from app.models.inventory import (
+    AssetTag,
+    Finding,
+    GraphProjectionJob,
+    Host,
+    RiskModel,
+    RiskScore,
+    Role,
+    ScanPolicy,
+    ScanRun,
+    ScanTarget,
+    ScannerProfile,
+    Service,
+    User,
+    UserRole,
+    Vulnerability,
+)
+
+__all__ = [
+    "AssetTag",
+    "Finding",
+    "GraphProjectionJob",
+    "Host",
+    "RiskModel",
+    "RiskScore",
+    "Role",
+    "ScanPolicy",
+    "ScanRun",
+    "ScanTarget",
+    "ScannerProfile",
+    "Service",
+    "User",
+    "UserRole",
+    "Vulnerability",
+]
+

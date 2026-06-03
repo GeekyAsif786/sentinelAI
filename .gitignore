@@ -1,0 +1,233 @@
+# ============================================================
+# SentinelAI — .gitignore
+# Stack: Python/FastAPI backend · React/TypeScript/Vite frontend
+#        Docker · Alembic · Celery · Neo4j · Redis · Prometheus/Grafana
+# ============================================================
+
+
+# ────────────────────────────────────────────────────────────
+# macOS
+# ────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.DocumentRevisions-V100
+.TemporaryItems
+
+
+# ────────────────────────────────────────────────────────────
+# Python
+# ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env
+.env.*
+!.env.example
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+*.whl
+MANIFEST
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.coveragerc
+nosetests.xml
+test-results/
+test_results.log
+
+# Linting / type-checking caches
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# setuptools / build artifacts
+*.so
+*.dylib
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+
+# ────────────────────────────────────────────────────────────
+# Alembic
+# ────────────────────────────────────────────────────────────
+# Keep migrations under version control, but ignore pycache inside
+backend/alembic/__pycache__/
+backend/alembic/versions/__pycache__/
+
+
+# ────────────────────────────────────────────────────────────
+# Database
+# ────────────────────────────────────────────────────────────
+*.sql.bak
+*.dump
+*.db
+*.sqlite
+*.sqlite3
+backend/database_backups/
+
+# Seed / test data (keep seed_test_data.sql if intentional — remove line below to track it)
+# seed_test_data.sql
+
+
+# ────────────────────────────────────────────────────────────
+# Node.js / Frontend (React + Vite + TypeScript)
+# ────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnp
+.pnp.js
+
+# Vite / TypeScript build outputs
+frontend/dist/
+frontend/build/
+frontend/*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
+
+# TypeScript declaration maps & incremental builds
+*.tsbuildinfo
+
+# ESLint cache
+.eslintcache
+
+# Stylelint cache
+.stylelintcache
+
+
+# ────────────────────────────────────────────────────────────
+# Docker
+# ────────────────────────────────────────────────────────────
+# Keep docker-compose.yml tracked; ignore local overrides
+docker-compose.override.yml
+docker-compose.local.yml
+.docker/
+
+
+# ────────────────────────────────────────────────────────────
+# Secrets & credentials — NEVER commit these
+# ────────────────────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+secrets/
+.secrets/
+.credentials/
+*_rsa
+*_rsa.pub
+*_dsa
+*_dsa.pub
+*_ecdsa
+*_ed25519
+
+
+# ────────────────────────────────────────────────────────────
+# Logs
+# ────────────────────────────────────────────────────────────
+*.log
+logs/
+staging_services_status.log
+verification_stats.txt
+
+
+# ────────────────────────────────────────────────────────────
+# Monitoring / Infra runtime data
+# ────────────────────────────────────────────────────────────
+# Prometheus data directory (populated at runtime)
+infra/prometheus/data/
+
+# Grafana runtime state
+infra/grafana/data/
+
+# Neo4j runtime data
+neo4j/data/
+neo4j/logs/
+neo4j/import/
+neo4j/plugins/
+
+# Redis runtime data
+redis/data/
+dump.rdb
+
+
+# ────────────────────────────────────────────────────────────
+# IDE / Editor
+# ────────────────────────────────────────────────────────────
+# VS Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# JetBrains (PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+Session.vim
+.netrwhist
+
+# Emacs
+*#
+.#*
+\#*\#
+
+
+# ────────────────────────────────────────────────────────────
+# OS / Misc
+# ────────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk

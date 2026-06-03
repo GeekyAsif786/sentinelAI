@@ -1,0 +1,278 @@
+{
+  "deployment": {
+    "id": "prod-deploy-phase-2-4-final",
+    "timestamp": "2025-06-04T00:00:00Z",
+    "status": "READY_FOR_EXECUTION",
+    "environment": "PRODUCTION",
+    "type": "DATABASE_MIGRATION_AND_CODE_DEPLOYMENT",
+    "estimated_duration": "30-50 minutes (excluding 24h monitoring)"
+  },
+  "phases": [
+    {
+      "id": 1,
+      "name": "Pre-Deployment",
+      "duration_minutes": 30,
+      "steps": 3,
+      "critical": true,
+      "steps_detail": [
+        {
+          "step": "1.1",
+          "name": "Verify Production Environment",
+          "duration_minutes": 10,
+          "checks": ["PostgreSQL", "Redis", "API Health"]
+        },
+        {
+          "step": "1.2",
+          "name": "Create Database Backup",
+          "duration_minutes": 15,
+          "expected_size_mb": "5-500"
+        },
+        {
+          "step": "1.3",
+          "name": "Document Current State",
+          "duration_minutes": 5
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Deployment Execution",
+      "duration_minutes": 25,
+      "steps": 4,
+      "critical": true,
+      "steps_detail": [
+        {
+          "step": "2.1",
+          "name": "Apply Database Migration",
+          "duration_minutes": 5,
+          "migration": "0002_add_graph_jobs",
+          "changes": {
+            "new_column": "worker_node_id (scan_runs)",
+            "new_table": "graph_projection_jobs",
+            "new_indexes": 3
+          }
+        },
+        {
+          "step": "2.2",
+          "name": "Verify Migration Success",
+          "duration_minutes": 5
+        },
+        {
+          "step": "2.3",
+          "name": "Deploy New Code",
+          "duration_minutes": 10,
+          "commit": "65c0d91"
+        },
+        {
+          "step": "2.4",
+          "name": "Restart Services",
+          "duration_minutes": 5,
+          "services": ["sentinelai-api", "sentinelai-worker"]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Smoke Tests",
+      "duration_minutes": 5,
+      "steps": 5,
+      "critical": true,
+      "tests": [
+        {
+          "name": "API Health",
+          "endpoint": "/health",
+          "expected": "200 OK"
+        },
+        {
+          "name": "Database Connection",
+          "query": "SELECT COUNT(*) FROM scan_runs",
+          "expected": "numeric count"
+        },
+        {
+          "name": "Graph Projection Jobs Table",
+          "query": "SELECT COUNT(*) FROM graph_projection_jobs",
+          "expected": "table accessible"
+        },
+        {
+          "name": "Celery Worker",
+          "check": "celery inspect active_queues",
+          "expected": "worker responsive"
+        },
+        {
+          "name": "Redis Connection",
+          "command": "redis-cli ping",
+          "expected": "PONG"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "24-Hour Monitoring",
+      "duration_hours": 24,
+      "critical": true,
+      "monitoring_interval": "hourly",
+      "success_criteria": [
+        {
+          "metric": "Error Rate",
+          "target": "< 2%",
+          "window": "1 hour rolling"
+        },
+        {
+          "metric": "Success Rate",
+          "target": "> 98%",
+          "window": "1 hour rolling"
+        },
+        {
+          "metric": "Avg Execution Time",
+          "target": "< 5 minutes",
+          "window": "1 hour rolling"
+        },
+        {
+          "metric": "Worker Crashes",
+          "target": "0",
+          "window": "24 hours"
+        },
+        {
+          "metric": "Service Uptime",
+          "target": "> 99.9%",
+          "window": "24 hours"
+        },
+        {
+          "metric": "Graph Jobs Completed",
+          "target": "> 0",
+          "window": "24 hours"
+        },
+        {
+          "metric": "Data Corruption",
+          "target": "0 incidents",
+          "window": "24 hours"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Sign-Off",
+      "duration_minutes": 30,
+      "steps": 2,
+      "critical": true,
+      "sign_offs_required": [
+        "Technical Lead",
+        "DevOps Engineer",
+        "Database Administrator",
+        "Product Manager"
+      ]
+    }
+  ],
+  "database_migration": {
+    "migration_id": "0002_add_graph_jobs",
+    "revision_id": "0002_add_graph_jobs",
+    "parent_revision": "0001_foundation",
+    "changes": [
+      {
+        "type": "ADD_COLUMN",
+        "table": "scan_runs",
+        "column": "worker_node_id",
+        "data_type": "String(120)",
+        "nullable": true
+      },
+      {
+        "type": "CREATE_TABLE",
+        "table": "graph_projection_jobs",
+        "columns": 9,
+        "columns_detail": [
+          {"name": "id", "type": "UUID", "primary_key": true},
+          {"name": "scan_run_id", "type": "UUID", "foreign_key": "scan_runs.id"},
+          {"name": "status", "type": "String(40)", "default": "queued"},
+          {"name": "started_at", "type": "DateTime(tz=True)", "nullable": true},
+          {"name": "completed_at", "type": "DateTime(tz=True)", "nullable": true},
+          {"name": "error_message", "type": "Text", "nullable": true},
+          {"name": "projection_stats", "type": "JSONB", "default": "{}"},
+          {"name": "created_at", "type": "DateTime(tz=True)", "server_default": "now()"},
+          {"name": "updated_at", "type": "DateTime(tz=True)", "server_default": "now()"}
+        ]
+      },
+      {
+        "type": "CREATE_INDEX",
+        "count": 3,
+        "indexes": [
+          {"name": "ix_graph_projection_jobs_scan_run_id", "columns": ["scan_run_id"]},
+          {"name": "ix_graph_projection_jobs_status", "columns": ["status"]},
+          {"name": "ix_graph_projection_jobs_created_at", "columns": ["created_at"]}
+        ]
+      }
+    ],
+    "downgrade_available": true,
+    "rollback_commands": [
+      "DROP TABLE graph_projection_jobs",
+      "ALTER TABLE scan_runs DROP COLUMN worker_node_id"
+    ]
+  },
+  "code_deployment": {
+    "commit": "65c0d91",
+    "branch": "main",
+    "repository": "github.com/asif/SentinelAI",
+    "changes_summary": "Add graph projection job tracking and scan execution fields"
+  },
+  "services": [
+    {
+      "name": "sentinelai-api",
+      "status": "active",
+      "restart_required": true,
+      "graceful_shutdown_timeout": 30
+    },
+    {
+      "name": "sentinelai-worker",
+      "status": "active",
+      "restart_required": true,
+      "graceful_shutdown_timeout": 30
+    }
+  ],
+  "dependencies": {
+    "required_tools": [
+      "psql (PostgreSQL client)",
+      "alembic",
+      "git",
+      "redis-cli",
+      "celery",
+      "curl",
+      "jq"
+    ],
+    "system_requirements": {
+      "os": "Linux/macOS",
+      "disk_space_gb": 50,
+      "backup_location": "/backups"
+    }
+  },
+  "rollback_procedures": [
+    {
+      "type": "DATABASE",
+      "estimated_time_minutes": 15,
+      "procedure": "Restore from backup file"
+    },
+    {
+      "type": "CODE",
+      "estimated_time_minutes": 20,
+      "procedure": "Git revert or reset to previous commit"
+    }
+  ],
+  "documentation": {
+    "deployment_procedures": "PRODUCTION_DEPLOYMENT_FINAL_INSTRUCTIONS.md",
+    "execution_report": "PRODUCTION_DEPLOYMENT_EXECUTION_REPORT.md",
+    "database_schema": "DATABASE_SCHEMA.md",
+    "architecture": "ARCHITECTURE.md"
+  },
+  "success_criteria": {
+    "deployment_successful_when": [
+      "Alembic current returns: 0002_add_graph_jobs",
+      "Table graph_projection_jobs exists with 9 columns",
+      "3+ indexes created on graph_projection_jobs",
+      "Both services running and responsive",
+      "All 5 smoke tests pass",
+      "24-hour monitoring: error rate < 2%",
+      "24-hour monitoring: success rate > 98%",
+      "No data loss detected",
+      "No critical issues requiring rollback"
+    ]
+  },
+  "emergency_procedure": "If critical issues detected at any phase: STOP IMMEDIATELY and execute rollback_procedures"
+}

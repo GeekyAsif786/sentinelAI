@@ -1,0 +1,236 @@
+# SentinelAI Staging Alert Rules Configuration
+# Rules for Prometheus/Alertmanager to trigger on critical conditions
+
+groups:
+  - name: "sentinelai_staging_alerts"
+    interval: 30s
+    rules:
+      
+      # ========================================================================
+      # CRITICAL ALERTS
+      # ========================================================================
+      
+      - alert: CeleryWorkerDisconnected
+        expr: celery_worker_pool_size < 1
+        for: 1m
+        labels:
+          severity: critical
+          service: celery
+        annotations:
+          summary: "Celery worker disconnected"
+          description: "No active Celery workers available. Scan execution is blocked."
+          runbook: "/docs/monitoring/runbooks/CELERY_WORKER_RECOVERY.md"
+      
+      - alert: ScanExecutionCriticalFailure
+        expr: rate(scan_failures_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          service: scan_engine
+        annotations:
+          summary: "Critical scan failure rate detected (>50%)"
+          description: "More than 50% of scans are failing. Immediate investigation required."
+          runbook: "/docs/monitoring/runbooks/SCAN_FAILURE_INVESTIGATION.md"
+      
+      - alert: DatabaseConnectionPoolExhausted
+        expr: db_connections_active / db_connections_max > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          service: postgresql
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Connection pool usage at {{ $value | humanizePercentage }}. Risk of new connections being rejected."
+          runbook: "/docs/monitoring/runbooks/DB_CONNECTION_RECOVERY.md"
+      
+      - alert: RedisConnectionLoss
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis connection lost"
+          description: "Cannot connect to Redis. Task queue and caching will fail."
+          runbook: "/docs/monitoring/runbooks/REDIS_RECOVERY.md"
+      
+      - alert: Neo4jGraphDatabaseDown
+        expr: neo4j_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: neo4j
+        annotations:
+          summary: "Neo4j graph database unreachable"
+          description: "Cannot connect to Neo4j. Graph projection jobs will fail."
+          runbook: "/docs/monitoring/runbooks/NEO4J_RECOVERY.md"
+      
+      # ========================================================================
+      # WARNING ALERTS
+      # ========================================================================
+      
+      - alert: HighScanErrorRate
+        expr: rate(scan_failures_total[5m]) / rate(scan_attempts_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: scan_engine
+        annotations:
+          summary: "High scan error rate (>10%)"
+          description: "Error rate is {{ $value | humanizePercentage }}. Investigate recent scan failures."
+          runbook: "/docs/monitoring/runbooks/SCAN_ERROR_ANALYSIS.md"
+      
+      - alert: GraphProjectionFailureRateHigh
+        expr: rate(graph_projection_failures_total[10m]) / rate(graph_projection_attempts_total[10m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          service: graph_processing
+        annotations:
+          summary: "Graph projection failure rate high (>5%)"
+          description: "Graph projection success rate dropped to {{ $value | humanizePercentage }}."
+          runbook: "/docs/monitoring/runbooks/GRAPH_PROJECTION_DEBUG.md"
+      
+      - alert: APIResponseTimeExceeded
+        expr: http_request_duration_seconds{quantile="0.95"} > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "API P95 response time exceeds 5 seconds"
+          description: "P95 response time is {{ $value | humanizeDuration }}. Check database and backend performance."
+          runbook: "/docs/monitoring/runbooks/API_LATENCY_DEBUG.md"
+      
+      - alert: DatabaseConnectionPoolWarning
+        expr: db_connections_active / db_connections_max > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: postgresql
+        annotations:
+          summary: "Database connection pool usage high (>80%)"
+          description: "Connection pool at {{ $value | humanizePercentage }} capacity. Monitor for exhaustion."
+          runbook: "/docs/monitoring/runbooks/DB_CONNECTION_TUNING.md"
+      
+      - alert: CeleryQueueDepthHigh
+        expr: celery_queue_length > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: celery
+        annotations:
+          summary: "Celery task queue backlog high (>1000 tasks)"
+          description: "{{ $value }} tasks waiting in queue. Workers may be overloaded."
+          runbook: "/docs/monitoring/runbooks/CELERY_SCALING.md"
+      
+      - alert: RedisMemoryUsageHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis memory usage high (>90%)"
+          description: "Redis is at {{ $value | humanizePercentage }} capacity. May cause eviction."
+          runbook: "/docs/monitoring/runbooks/REDIS_MEMORY_CLEANUP.md"
+      
+      - alert: SlowDatabaseQueries
+        expr: pg_stat_statements_mean_time > 5000
+        for: 5m
+        labels:
+          severity: warning
+          service: postgresql
+        annotations:
+          summary: "Slow database queries detected (>5s average)"
+          description: "Query slow-down detected. Review query performance."
+          runbook: "/docs/monitoring/runbooks/SLOW_QUERY_ANALYSIS.md"
+      
+      # ========================================================================
+      # INFO ALERTS
+      # ========================================================================
+      
+      - alert: WorkerCPUUsageHigh
+        expr: celery_worker_cpu_percent > 85
+        for: 10m
+        labels:
+          severity: info
+          service: celery
+        annotations:
+          summary: "Worker CPU usage high (>85%)"
+          description: "Worker {{ $labels.worker_name }} CPU at {{ $value }}%. May indicate overload."
+          runbook: "/docs/monitoring/runbooks/WORKER_RESOURCE_MONITORING.md"
+      
+      - alert: WorkerMemoryUsageHigh
+        expr: celery_worker_memory_percent > 80
+        for: 10m
+        labels:
+          severity: info
+          service: celery
+        annotations:
+          summary: "Worker memory usage high (>80%)"
+          description: "Worker {{ $labels.worker_name }} memory at {{ $value }}%. Monitor for leaks."
+          runbook: "/docs/monitoring/runbooks/MEMORY_LEAK_DETECTION.md"
+      
+      - alert: ScanExecutionTimeIncreasing
+        expr: rate(scan_execution_seconds[1h]) > rate(scan_execution_seconds[24h]) * 1.5
+        for: 1h
+        labels:
+          severity: info
+          service: scan_engine
+        annotations:
+          summary: "Scan execution times trending upward"
+          description: "Scan times increasing compared to daily average. May indicate resource pressure."
+          runbook: "/docs/monitoring/runbooks/PERFORMANCE_BASELINE_CHECK.md"
+      
+      - alert: NoRecentScanActivity
+        expr: time() - timestamp(max(scan_runs.completed_at)) > 3600
+        for: 5m
+        labels:
+          severity: info
+          service: scan_engine
+        annotations:
+          summary: "No recent scan activity (>1 hour)"
+          description: "No scans completed in the last hour. Check if scanning is paused."
+          runbook: "/docs/monitoring/runbooks/SCAN_ACTIVITY_CHECK.md"
+
+
+# ============================================================================
+# Alert Groups for Alertmanager Routing
+# ============================================================================
+
+alert_routing:
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  
+  routes:
+    - match:
+        severity: critical
+      receiver: critical_alerts
+      continue: true
+    
+    - match:
+        severity: warning
+      receiver: warning_alerts
+    
+    - match:
+        severity: info
+      receiver: info_alerts
+
+receivers:
+  - name: critical_alerts
+    webhook_configs:
+      - url: 'http://localhost:5000/api/alerts/critical'
+        send_resolved: true
+  
+  - name: warning_alerts
+    webhook_configs:
+      - url: 'http://localhost:5000/api/alerts/warning'
+        send_resolved: true
+  
+  - name: info_alerts
+    webhook_configs:
+      - url: 'http://localhost:5000/api/alerts/info'
+        send_resolved: true
