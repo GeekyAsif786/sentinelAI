@@ -10,6 +10,7 @@ from app.core.database import get_db_session
 from app.core.security import AuthenticatedUser, RoleName, require_roles
 from app.models import ScanPolicy, ScanRun, ScanTarget, ScannerProfile
 from app.schemas.scans import ScanCreateResponse, ScanDetail, ScanRequest, ScanStatus, ScanTargetType
+from app.tasks import execute_scan_from_queue
 
 router = APIRouter(prefix="/scan", tags=["scan"])
 HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)(?!-)[A-Za-z0-9.-]+(?<!-)$")
@@ -73,6 +74,10 @@ def create_scan(
         )
 
     db.commit()
+
+    # Trigger the background worker to execute the scan
+    execute_scan_from_queue.delay()
+
     return ScanCreateResponse(
         scan_id=scan_run.id,
         status=ScanStatus.queued,

@@ -26,3 +26,8 @@ class Page(BaseModel):
 class ResourceId(BaseModel):
     id: UUID
 
+
+class DevTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+
