@@ -40,7 +40,7 @@ VALUES (
     NOW(), NOW()
 ) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;
 
--- Default scan policy (allows RFC-1918 + loopback)
+-- Default scan policy (allows RFC-1918 and a scoped public lab range)
 INSERT INTO scan_policies (
     id, name, description,
     allowed_cidrs, blocked_cidrs,
@@ -51,7 +51,7 @@ INSERT INTO scan_policies (
     'c001e000-0000-0000-0000-000000000001'::uuid,
     'dev-default',
     'Default development scan policy',
-    ARRAY['127.0.0.0/8','10.0.0.0/8','192.168.0.0/16']::cidr[],
+    ARRAY['127.0.0.0/8','10.0.0.0/8','192.168.0.0/16','110.224.103.114/32','110.224.103.0/24']::cidr[],
     ARRAY[]::cidr[],
     100, 1000, '{}', true,
     NOW(), NOW()

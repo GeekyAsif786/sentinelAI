@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import make_asgi_app
 
-from app.api.routes import ai, assets, attack_paths, auth, graph, health, scans, vulnerabilities
+from app.api.routes import ai, assets, attack_paths, auth, engagements, graph, health, scans, vulnerabilities
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -28,6 +28,8 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(scans.router)
+    app.include_router(scans.legacy_router)
+    app.include_router(engagements.router)
     app.include_router(assets.router)
     app.include_router(vulnerabilities.router)
     app.include_router(attack_paths.router)
@@ -38,4 +40,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

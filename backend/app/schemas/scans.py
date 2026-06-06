@@ -23,6 +23,7 @@ class ScanTargetType(StrEnum):
 class ScanRequest(BaseModel):
     policy_id: UUID
     scanner_profile_id: UUID
+    engagement_id: UUID | None = None
     provider: str = Field(pattern=r"^[a-z0-9_-]+$", max_length=40)
     scan_type: str = Field(default="discovery", max_length=80)
     targets: list[str] = Field(min_length=1, max_length=1024)
@@ -41,4 +42,3 @@ class ScanDetail(BaseModel):
     targets: list[str]
     graph_projection_status: str
     error_message: str | None = None
-

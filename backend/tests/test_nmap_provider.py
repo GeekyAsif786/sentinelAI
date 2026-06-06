@@ -1,6 +1,8 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from app.discovery.nmap import NmapDiscoveryProvider, NmapXmlParseError
+from app.discovery.nmap import NmapDiscoveryProvider, NmapXmlParseError, ScanProfile
 
 
 NMAP_XML = """<?xml version="1.0"?>
@@ -60,3 +62,40 @@ def test_parse_rejects_non_nmap_xml() -> None:
     with pytest.raises(NmapXmlParseError):
         provider.parse_artifact("<root />")
 
+
+def test_execute_nmap_builds_preset_command_and_parses_xml() -> None:
+    provider = NmapDiscoveryProvider()
+
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = NMAP_XML
+    mock_result.stderr = ""
+
+    with patch("shutil.which", return_value="/usr/bin/nmap"), patch("os.geteuid", return_value=0), patch(
+        "subprocess.run",
+        return_value=mock_result,
+    ) as mock_run:
+        result = provider.execute_nmap(["8.8.8.8"], ScanProfile.external_full)
+
+    assert len(result.hosts) == 1
+    command = mock_run.call_args.args[0]
+    assert command[0] == "/usr/bin/nmap"
+    assert "-sS" in command
+    assert "-sV" in command
+    assert "--open" in command
+    assert "-T3" in command
+    assert "--max-rate" in command
+    assert "500" in command
+    assert "-p" in command
+    assert "1-65535" in command
+    assert "-oX" in command
+    assert "-" in command
+    assert "8.8.8.8" in command
+
+
+def test_execute_nmap_rejects_external_profile_without_root() -> None:
+    provider = NmapDiscoveryProvider()
+
+    with patch("shutil.which", return_value="/usr/bin/nmap"), patch("os.geteuid", return_value=1000):
+        with pytest.raises(PermissionError):
+            provider.execute_nmap(["8.8.8.8"], ScanProfile.external_stealth)

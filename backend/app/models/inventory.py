@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
@@ -10,6 +11,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.engagement import Engagement
 
 
 class TimestampMixin:
@@ -89,6 +93,7 @@ class ScanRun(Base, TimestampMixin):
     requested_by_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
     scan_policy_id: Mapped[UUID] = mapped_column(ForeignKey("scan_policies.id"), index=True)
     scanner_profile_id: Mapped[UUID] = mapped_column(ForeignKey("scanner_profiles.id"), index=True)
+    engagement_id: Mapped[UUID | None] = mapped_column(ForeignKey("engagements.id"), index=True, nullable=True)
     provider: Mapped[str] = mapped_column(String(80), index=True)
     status: Mapped[str] = mapped_column(String(40), index=True)
     scan_type: Mapped[str] = mapped_column(String(80))
@@ -99,10 +104,12 @@ class ScanRun(Base, TimestampMixin):
     provider_version: Mapped[Optional[str]] = mapped_column(String(80))
     worker_node_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     configuration: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    recon_data: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     targets: Mapped[list["ScanTarget"]] = relationship(back_populates="scan_run")
     projection_jobs: Mapped[list["GraphProjectionJob"]] = relationship(back_populates="scan_run")
     scanner_profile: Mapped["ScannerProfile"] = relationship()
+    engagement: Mapped["Engagement | None"] = relationship(back_populates="scan_runs")
 
 
 class ScanTarget(Base):
@@ -243,4 +250,3 @@ class GraphProjectionJob(Base, TimestampMixin):
     projection_stats: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
 
     scan_run: Mapped[ScanRun] = relationship(back_populates="projection_jobs")
-

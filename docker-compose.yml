@@ -11,6 +11,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: local-development-change-me
       AI_ENABLED: "false"
+      NVD_API_KEY: "7a98b1e4-456f-4550-916f-5ddf609e080b"
     ports:
       - "8000:8000"
     depends_on:
@@ -28,6 +29,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: local-development-change-me
       AI_ENABLED: "false"
+      NVD_API_KEY: "7a98b1e4-456f-4550-916f-5ddf609e080b"
     depends_on:
       - postgres
       - redis

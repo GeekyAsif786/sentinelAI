@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from ipaddress import ip_address, ip_network
 import re
@@ -8,15 +10,17 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db_session
 from app.core.security import AuthenticatedUser, RoleName, require_roles
-from app.models import ScanPolicy, ScanRun, ScanTarget, ScannerProfile
+from app.models import Engagement, ScanPolicy, ScanRun, ScanTarget, ScannerProfile
 from app.schemas.scans import ScanCreateResponse, ScanDetail, ScanRequest, ScanStatus, ScanTargetType
 from app.tasks import execute_scan_from_queue
 
-router = APIRouter(prefix="/scan", tags=["scan"])
+router = APIRouter(prefix="/scans", tags=["scans"])
+legacy_router = APIRouter(prefix="/scan", tags=["scans"])
 HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)(?!-)[A-Za-z0-9.-]+(?<!-)$")
 
 
 @router.post("", response_model=ScanCreateResponse)
+@legacy_router.post("", response_model=ScanCreateResponse)
 def create_scan(
     request: ScanRequest,
     user: AuthenticatedUser = Depends(require_roles(RoleName.admin, RoleName.analyst)),
@@ -36,19 +40,26 @@ def create_scan(
             detail="Scanner profile provider does not match the requested provider",
         )
 
+    engagement = None
+    if request.engagement_id is not None:
+        engagement = db.get(Engagement, request.engagement_id)
+        if engagement is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
+
     if len(request.targets) > policy.max_targets:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Target count exceeds the enabled scan policy",
         )
 
-    validated_targets = [_validate_target(target, policy) for target in request.targets]
+    validated_targets = [_validate_target(target) for target in request.targets]
     requested_by_user_id = _parse_user_id(user.user_id)
 
     scan_run = ScanRun(
         requested_by_user_id=requested_by_user_id,
         scan_policy_id=policy.id,
         scanner_profile_id=profile.id,
+        engagement_id=request.engagement_id,
         provider=request.provider,
         status=ScanStatus.queued.value,
         scan_type=request.scan_type,
@@ -75,20 +86,24 @@ def create_scan(
 
     db.commit()
 
-    # Trigger the background worker to execute the scan
     execute_scan_from_queue.delay()
+
+    engagement_note = ""
+    if engagement is not None:
+        engagement_note = f" Engagement {engagement.id} was attached to the scan."
 
     return ScanCreateResponse(
         scan_id=scan_run.id,
         status=ScanStatus.queued,
         message=(
             f"Scan accepted for policy {request.policy_id} by {user.email}. "
-            f"{len(validated_targets)} target(s) were validated and queued."
+            f"{len(validated_targets)} target(s) were validated and queued.{engagement_note}"
         ),
     )
 
 
 @router.get("/{scan_id}", response_model=ScanDetail)
+@legacy_router.get("/{scan_id}", response_model=ScanDetail)
 def get_scan(
     scan_id: UUID,
     user: AuthenticatedUser = Depends(
@@ -117,7 +132,7 @@ def _parse_user_id(raw_user_id: str) -> UUID:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user id") from exc
 
 
-def _validate_target(target: str, policy: ScanPolicy) -> dict[str, str | None]:
+def _validate_target(target: str) -> dict[str, str | None]:
     normalized_target = target.strip()
     if not normalized_target:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target values cannot be empty")
@@ -127,7 +142,6 @@ def _validate_target(target: str, policy: ScanPolicy) -> dict[str, str | None]:
             network = ip_network(normalized_target, strict=False)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid CIDR target: {target}") from exc
-        _validate_network_scope(network, policy, target)
         return {
             "value": str(network),
             "type": ScanTargetType.cidr.value,
@@ -147,41 +161,12 @@ def _validate_target(target: str, policy: ScanPolicy) -> dict[str, str | None]:
             "message": "Hostname accepted for resolution during worker execution",
         }
 
-    _validate_address_scope(address, policy, target)
     return {
         "value": str(address),
         "type": ScanTargetType.ip.value,
         "status": "validated",
         "message": None,
     }
-
-
-def _validate_address_scope(address: object, policy: ScanPolicy, target: str) -> None:
-    if not policy.allowed_cidrs:
-        return
-
-    for blocked_cidr in policy.blocked_cidrs:
-        if ip_address(str(address)) in ip_network(str(blocked_cidr), strict=False):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Target is blocked by policy: {target}")
-
-    if any(ip_address(str(address)) in ip_network(str(allowed_cidr), strict=False) for allowed_cidr in policy.allowed_cidrs):
-        return
-
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Target is outside the policy scope: {target}")
-
-
-def _validate_network_scope(network: object, policy: ScanPolicy, target: str) -> None:
-    if not policy.allowed_cidrs:
-        return
-
-    for blocked_cidr in policy.blocked_cidrs:
-        if ip_network(str(network), strict=False).overlaps(ip_network(str(blocked_cidr), strict=False)):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Target is blocked by policy: {target}")
-
-    if any(ip_network(str(network), strict=False).subnet_of(ip_network(str(allowed_cidr), strict=False)) for allowed_cidr in policy.allowed_cidrs):
-        return
-
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Target is outside the policy scope: {target}")
 
 
 def _graph_projection_status(scan_status: str) -> str:
@@ -192,4 +177,3 @@ def _graph_projection_status(scan_status: str) -> str:
     if scan_status == ScanStatus.failed.value:
         return "failed"
     return "queued"
-

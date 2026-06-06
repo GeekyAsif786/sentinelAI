@@ -15,9 +15,11 @@ from app.models.inventory import (
     UserRole,
     Vulnerability,
 )
+from app.models.engagement import Engagement
 
 __all__ = [
     "AssetTag",
+    "Engagement",
     "Finding",
     "GraphProjectionJob",
     "Host",
@@ -33,4 +35,3 @@ __all__ = [
     "UserRole",
     "Vulnerability",
 ]
-

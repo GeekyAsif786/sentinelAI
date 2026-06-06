@@ -15,6 +15,7 @@ from app.tasks import (
     _handle_scan_error,
     _is_external_service,
     _persist_discovery_result,
+    _persist_scan_targets,
     _trigger_graph_projection,
 )
 
@@ -75,7 +76,7 @@ def _create_profile() -> ScannerProfile:
         name="test-profile",
         provider="nmap",
         description="Test profile",
-        configuration={"extra_args": ["-sV"]},
+        configuration={"scan_profile": "local_discovery"},
         is_enabled=True,
     )
 
@@ -176,6 +177,20 @@ def test_persist_discovery_result_upserts_existing_host() -> None:
     _persist_discovery_result(session, scan_run, discovered_result)
 
     assert existing_host.hostname == "newname.local"
+
+
+def test_persist_scan_targets_creates_placeholder_host_for_ip_targets() -> None:
+    policy = _create_policy()
+    profile = _create_profile()
+    scan_run = _create_scan_run(policy, profile)
+    session = FakeSession()
+
+    _persist_scan_targets(session, scan_run)
+
+    host_added = next((item for item in session.added if isinstance(item, Host)), None)
+    assert host_added is not None
+    assert host_added.primary_ip == "10.0.1.10"
+    assert host_added.hostname is None
 
 
 def test_is_external_service_identifies_common_external_ports() -> None:
