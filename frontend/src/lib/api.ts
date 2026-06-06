@@ -77,6 +77,8 @@ export interface VulnerabilityListResponse {
 export interface ScanRequest {
   policy_id: string;
   scanner_profile_id: string;
+  engagement_id?: string | null;
+  is_xml_import?: boolean;
   provider: string;
   scan_type: string;
   targets: string[];
@@ -354,6 +356,30 @@ export async function queueScan(request: ScanRequest): Promise<ScanCreateRespons
   });
   if (!response.ok) {
     let detail = `Scan request failed with ${response.status}`;
+    try {
+      const err = (await response.json()) as { detail?: string };
+      if (err.detail) detail = err.detail;
+    } catch {
+      // ignore parse error
+    }
+    throw new Error(detail);
+  }
+  return (await response.json()) as ScanCreateResponse;
+}
+
+export async function importNmapXml(xmlContent: string, label: string): Promise<ScanCreateResponse> {
+  const token = await getDevToken();
+  const searchParams = new URLSearchParams({ label });
+  const response = await fetch(`${apiBaseUrl}/scans/import?${searchParams.toString()}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/xml; charset=utf-8",
+      Authorization: `Bearer ${token}`,
+    },
+    body: xmlContent,
+  });
+  if (!response.ok) {
+    let detail = `XML import failed with ${response.status}`;
     try {
       const err = (await response.json()) as { detail?: string };
       if (err.detail) detail = err.detail;

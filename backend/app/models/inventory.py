@@ -91,12 +91,21 @@ class ScanRun(Base, TimestampMixin):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     requested_by_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
-    scan_policy_id: Mapped[UUID] = mapped_column(ForeignKey("scan_policies.id"), index=True)
-    scanner_profile_id: Mapped[UUID] = mapped_column(ForeignKey("scanner_profiles.id"), index=True)
+    scan_policy_id: Mapped[UUID | None] = mapped_column(ForeignKey("scan_policies.id"), index=True, nullable=True)
+    scanner_profile_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("scanner_profiles.id"),
+        index=True,
+        nullable=True,
+    )
     engagement_id: Mapped[UUID | None] = mapped_column(ForeignKey("engagements.id"), index=True, nullable=True)
     provider: Mapped[str] = mapped_column(String(80), index=True)
     status: Mapped[str] = mapped_column(String(40), index=True)
     scan_type: Mapped[str] = mapped_column(String(80))
+    scan_source_ip: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+        comment="IP address of the machine that submitted the scan request",
+    )
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[Optional[str]] = mapped_column(String(120))

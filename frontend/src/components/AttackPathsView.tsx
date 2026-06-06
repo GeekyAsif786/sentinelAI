@@ -1,15 +1,50 @@
 import { GitBranch, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { mockAttackPaths, AttackPath } from "../lib/mockData";
+import { fetchAttackPaths } from "../lib/api";
 
 export function AttackPathsView(): JSX.Element {
   const [paths, setPaths] = useState<AttackPath[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
-    // In a real app, this would fetch from the API. We're using mock data directly
-    // since the real API only returns a single deterministic path currently.
-    setPaths(mockAttackPaths.sort((a, b) => b.risk_score - a.risk_score));
+    let active = true;
+
+    // Try to load real attack-paths from the backend; fall back to mock data.
+    (async () => {
+      try {
+        const resp = await fetchAttackPaths();
+        if (!active) return;
+
+        // Backend returns a single path response. Map it to the UI's AttackPath shape.
+        if (resp.path && resp.path.length > 0) {
+          const mapped: AttackPath = {
+            id: String(Date.now()),
+            name: `Modeled Path`,
+            source: "",
+            target: "",
+            path: resp.path,
+            risk_score: Math.round(resp.risk_score),
+            confidence: resp.confidence,
+            critical_nodes: resp.critical_nodes,
+            mitre_techniques: [],
+            description: resp.message || "",
+            recommendations: [],
+          };
+          setPaths([mapped]);
+        } else {
+          // Empty or no path — use mock list so UX is helpful during demos.
+          setPaths(mockAttackPaths.sort((a, b) => b.risk_score - a.risk_score));
+        }
+      } catch {
+        if (!active) return;
+        setPaths(mockAttackPaths.sort((a, b) => b.risk_score - a.risk_score));
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const toggleExpand = (id: string) => {

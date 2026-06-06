@@ -8,7 +8,7 @@ import celery.exceptions
 import structlog
 
 from sqlalchemy import and_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -36,7 +36,13 @@ def execute_scan_from_queue(self) -> dict[str, object]:
     try:
         scan_run = session.scalar(
             select(ScanRun)
-            .where(and_(ScanRun.status == ScanStatus.queued.value, ScanRun.provider == "nmap"))
+            .where(
+                and_(
+                    ScanRun.status == ScanStatus.queued.value,
+                    ScanRun.provider == "nmap",
+                    ScanRun.scan_type != "xml_import",
+                )
+            )
             .order_by(ScanRun.created_at)
             .options(
                 selectinload(ScanRun.scanner_profile),
@@ -480,6 +486,77 @@ def project_inventory_graph(scan_run_id: str | None = None) -> dict[str, object]
         session.close()
 
 
+@celery_app.task(name="process_xml_import", bind=True, max_retries=3)
+def process_xml_import(
+    self,
+    scan_run_id: str,
+    xml_content: str,
+) -> dict[str, object]:
+    """
+    Process an uploaded Nmap XML artifact through the full pipeline.
+
+    Steps:
+    1. Parse XML into DiscoveryResult
+    2. Persist hosts and services (upsert by IP)
+    3. Enrich findings with CVE/EPSS data
+    4. Score risk via CompositeRiskScore
+    5. Project to Neo4j graph
+
+    This task runs the same pipeline as a live scan — the only
+    difference is the input comes from an uploaded file, not
+    a live nmap subprocess.
+    """
+    session = SessionLocal()
+    try:
+        scan_run = session.get(ScanRun, scan_run_id)
+        if scan_run is None:
+            return {"status": "error", "message": f"ScanRun {scan_run_id} not found"}
+
+        scan_run.status = ScanStatus.running.value
+        scan_run.started_at = datetime.now(UTC)
+        session.commit()
+
+        provider = NmapDiscoveryProvider()
+        try:
+            discovery_result = provider.parse_artifact(xml_content)
+        except NmapXmlParseError as exc:
+            return _handle_scan_error(
+                session,
+                scan_run,
+                "PARSE_ERROR",
+                f"Failed to parse uploaded Nmap XML: {exc}",
+            )
+
+        _persist_discovery_result(session, scan_run, discovery_result)
+        _enrich_findings_with_cve_data(session, scan_run)
+
+        scan_run.status = ScanStatus.completed.value
+        scan_run.completed_at = datetime.now(UTC)
+        scan_run.provider_version = discovery_result.provider_version
+        scan_run.configuration = {
+            **(scan_run.configuration or {}),
+            "hosts_discovered": len(discovery_result.hosts),
+        }
+        session.commit()
+
+        _trigger_graph_projection(session, scan_run)
+
+        return {
+            "status": "completed",
+            "scan_id": scan_run_id,
+            "source": "xml_import",
+            "hosts_discovered": len(discovery_result.hosts),
+        }
+
+    except celery.exceptions.Retry:
+        raise
+    except Exception as exc:
+        self.retry(exc=exc, countdown=60)
+        return {"status": "error", "message": str(exc)}
+    finally:
+        session.close()
+
+
 async def _fetch_enrichment_data(
     cve_ids: list[str],
 ) -> tuple[dict[str, CveData], dict[str, EpssData]]:
@@ -494,7 +571,7 @@ async def _fetch_enrichment_data(
     return await asyncio.gather(cve_task, epss_task)
 
 
-def _enrich_findings_with_cve_data(session: Any, scan_run: ScanRun) -> None:
+def _enrich_findings_with_cve_data(session: Session, scan_run: ScanRun) -> None:
     """Enrich scan run findings with CVE data (CVSS and EPSS scores)."""
     findings = session.scalars(
         select(Finding).where(Finding.scan_run_id == scan_run.id)
