@@ -1,5 +1,11 @@
+from dataclasses import dataclass
 from hashlib import sha256
+from enum import StrEnum
+import os
+import shlex
 from xml.etree import ElementTree
+
+import structlog
 
 from app.discovery.provider import (
     DiscoveredHost,
@@ -9,11 +15,81 @@ from app.discovery.provider import (
     DiscoveryResult,
 )
 
+logger = structlog.get_logger()
+
 ADDRESS_TYPE_IPV4 = "ipv4"
 ADDRESS_TYPE_IPV6 = "ipv6"
 ADDRESS_TYPE_MAC = "mac"
 HOST_STATUS_UP = "up"
 SERVICE_STATE_OPEN = "open"
+
+
+class ScanProfile(StrEnum):
+    local_discovery = "local_discovery"
+    local_full = "local_full"
+    external_discovery = "external_discovery"
+    external_full = "external_full"
+    external_stealth = "external_stealth"
+
+
+@dataclass(frozen=True)
+class NmapScanConfig:
+    profile: ScanProfile
+    flags: list[str]
+    timing_template: int
+    max_rate: int | None
+    port_range: str
+    description: str
+
+
+SCAN_PROFILES: dict[ScanProfile, NmapScanConfig] = {
+    ScanProfile.local_discovery: NmapScanConfig(
+        profile=ScanProfile.local_discovery,
+        flags=["-sn", "-PR", "--send-eth"],
+        timing_template=4,
+        max_rate=None,
+        port_range="",
+        description="ARP-based LAN host discovery",
+    ),
+    ScanProfile.local_full: NmapScanConfig(
+        profile=ScanProfile.local_full,
+        flags=["-sV", "-sC", "-O"],
+        timing_template=4,
+        max_rate=None,
+        port_range="1-1000",
+        description="Full service scan on LAN target",
+    ),
+    ScanProfile.external_discovery: NmapScanConfig(
+        profile=ScanProfile.external_discovery,
+        flags=["-sn", "-PE", "-PS80,443,22,3389", "-PA80,443"],
+        timing_template=3,
+        max_rate=300,
+        port_range="",
+        description="ICMP+TCP host discovery for internet targets",
+    ),
+    ScanProfile.external_full: NmapScanConfig(
+        profile=ScanProfile.external_full,
+        flags=["-sS", "-sV", "--open"],
+        timing_template=3,
+        max_rate=500,
+        port_range="1-65535",
+        description="SYN scan + service detection, external target",
+    ),
+    ScanProfile.external_stealth: NmapScanConfig(
+        profile=ScanProfile.external_stealth,
+        flags=["-sS", "--open"],
+        timing_template=2,
+        max_rate=150,
+        port_range="1-65535",
+        description="Slow stealth SYN scan, avoids IDS triggering",
+    ),
+}
+
+EXTERNAL_SCAN_PROFILES = {
+    ScanProfile.external_discovery,
+    ScanProfile.external_full,
+    ScanProfile.external_stealth,
+}
 
 
 class NmapXmlParseError(ValueError):
@@ -150,12 +226,18 @@ class NmapDiscoveryProvider(DiscoveryProvider):
         value = service_element.attrib.get(key)
         return value if value else None
 
-    def execute_nmap(self, targets: list[str], profile_config: dict[str, object], timeout: int = 300) -> DiscoveryResult:
+    def execute_nmap(
+        self,
+        targets: list[str],
+        profile: ScanProfile,
+        timeout: int = 300,
+        port_range_override: str | None = None,
+    ) -> DiscoveryResult:
         """Execute nmap scanner against targets and parse XML output.
 
         Args:
             targets: List of target addresses (IPs, CIDRs, or hostnames)
-            profile_config: Scanner profile configuration with nmap options
+            profile: Preset scan profile to use
             timeout: Subprocess timeout in seconds
 
         Returns:
@@ -173,7 +255,23 @@ class NmapDiscoveryProvider(DiscoveryProvider):
         if nmap_binary is None:
             raise RuntimeError("nmap binary not found in PATH")
 
-        cmd = self._build_nmap_command(nmap_binary, targets, profile_config)
+        scan_config = SCAN_PROFILES.get(profile)
+        if scan_config is None:
+            raise ValueError(f"Unknown Nmap scan profile: {profile}")
+
+        if profile in EXTERNAL_SCAN_PROFILES and getattr(os, "geteuid", lambda: 1)() != 0:
+            raise PermissionError(
+                f"Nmap profile {profile.value} requires root privileges for raw-socket and SYN scanning."
+            )
+
+        cmd = self._build_nmap_command(nmap_binary, targets, scan_config, port_range_override=port_range_override)
+        logger.info(
+            "Executing Nmap command",
+            profile=profile.value,
+            description=scan_config.description,
+            command=shlex.join(cmd),
+            targets=targets,
+        )
 
         try:
             result = subprocess.run(
@@ -197,26 +295,37 @@ class NmapDiscoveryProvider(DiscoveryProvider):
 
         return self.parse_artifact(result.stdout)
 
-    def _build_nmap_command(self, nmap_binary: str, targets: list[str], profile_config: dict[str, object]) -> list[str]:
-        """Build nmap command with options from profile configuration.
+    def _build_nmap_command(
+        self,
+        nmap_binary: str,
+        targets: list[str],
+        scan_config: NmapScanConfig,
+        port_range_override: str | None = None,
+    ) -> list[str]:
+        """Build nmap command with options from a preset scan configuration.
 
         Args:
             nmap_binary: Path to nmap executable
             targets: List of target addresses
-            profile_config: Scanner profile configuration dict
+            scan_config: Preset scan profile configuration
 
         Returns:
             Command list for subprocess
         """
         cmd = [nmap_binary]
 
-        extra_args = profile_config.get("extra_args", [])
-        if isinstance(extra_args, list):
-            cmd.extend(extra_args)
+        cmd.extend(scan_config.flags)
+        cmd.append(f"-T{scan_config.timing_template}")
+
+        if scan_config.max_rate is not None:
+            cmd.extend(["--max-rate", str(scan_config.max_rate)])
+
+        port_range = port_range_override if port_range_override is not None else scan_config.port_range
+        if port_range:
+            cmd.extend(["-p", port_range])
 
         cmd.extend(["-oX", "-"])
 
         cmd.extend(targets)
 
         return cmd
-

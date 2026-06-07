@@ -103,12 +103,13 @@ class DefensiveAttackPathEngine:
     def critical_nodes(self, path: tuple[str, ...]) -> tuple[str, ...]:
         if len(path) <= 2:
             return tuple()
-        edge_counts: dict[str, int] = defaultdict(int)
-        for relationship in self._relationships:
-            edge_counts[relationship.source] += 1
-            edge_counts[relationship.target] += 1
+        edges = [(path[i], path[i+1]) for i in range(len(path) - 1)]
+        degree: dict[str, int] = defaultdict(int)
+        for source, target in edges:
+            degree[source] += 1
+            degree[target] += 1
         middle_nodes = path[1:-1]
-        return tuple(node for node in middle_nodes if edge_counts[node] >= 3)
+        return tuple(node for node in middle_nodes if degree[node] >= 2)
 
     def choke_points(self) -> tuple[str, ...]:
         incoming: dict[str, int] = defaultdict(int)

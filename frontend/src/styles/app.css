@@ -1489,6 +1489,38 @@ a {
   font-size: 12px;
 }
 
+.scan-mode-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.scan-mode-btn {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 10px;
+  transition: all var(--transition-fast);
+}
+
+.scan-mode-btn:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.scan-mode-btn.active {
+  color: var(--cyan-400);
+  background: rgba(6, 182, 212, 0.12);
+}
+
+.modal-input,
 .modal-textarea {
   font: inherit;
   font-size: 13px;
@@ -1503,12 +1535,32 @@ a {
   line-height: 1.6;
 }
 
+.modal-input {
+  resize: none;
+}
+
+.modal-input[type="file"] {
+  color: var(--text-secondary);
+}
+
+.modal-input[type="file"]::file-selector-button {
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.modal-input:focus,
 .modal-textarea:focus {
   outline: none;
   border-color: var(--cyan-500);
   background: var(--bg-surface);
 }
 
+.modal-input:disabled,
 .modal-textarea:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -2196,4 +2248,3 @@ a {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
-

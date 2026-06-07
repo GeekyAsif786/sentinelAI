@@ -3,7 +3,15 @@ import { useEffect, useRef, useState } from "react";
 
 import { GraphSliceResponse, fetchGraphSlice } from "../lib/api";
 
-export function GraphPanel(): JSX.Element {
+export type GraphLayoutMode = "breadthfirst" | "cose";
+export type GraphCommand = "zoom-in" | "zoom-out" | "fit";
+
+interface GraphPanelProps {
+  layoutMode: GraphLayoutMode;
+  command: { type: GraphCommand; id: number } | null;
+}
+
+export function GraphPanel({ layoutMode, command }: GraphPanelProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<Core | null>(null);
   const [graphSlice, setGraphSlice] = useState<GraphSliceResponse | null>(null);
@@ -65,16 +73,16 @@ export function GraphPanel(): JSX.Element {
         }))
       ],
       layout: {
-        name: "breadthfirst",
-        directed: true,
+        name: layoutMode,
+        directed: layoutMode === "breadthfirst",
         padding: 16
       },
       style: [
         {
           selector: "node",
           style: {
-            "background-color": "#146c5f",
-            "border-color": "#f0b429",
+            "background-color": "#22c55e",
+            "border-color": "#f7fbf8",
             "border-width": 2,
             color: "#13201d",
             "font-size": 12,
@@ -85,6 +93,24 @@ export function GraphPanel(): JSX.Element {
             "text-margin-y": -10,
             width: "mapData(riskScore, 0, 100, 34, 62)",
             height: "mapData(riskScore, 0, 100, 34, 62)"
+          }
+        },
+        {
+          selector: "node[riskScore >= 40]",
+          style: {
+            "background-color": "#eab308"
+          }
+        },
+        {
+          selector: "node[riskScore >= 60]",
+          style: {
+            "background-color": "#f97316"
+          }
+        },
+        {
+          selector: "node[riskScore >= 80]",
+          style: {
+            "background-color": "#ef4444"
           }
         },
         {
@@ -110,7 +136,29 @@ export function GraphPanel(): JSX.Element {
       graph.destroy();
       graphRef.current = null;
     };
-  }, [graphSlice]);
+  }, [graphSlice, layoutMode]);
+
+  useEffect(() => {
+    if (command === null || graphRef.current === null) {
+      return;
+    }
+
+    const graph = graphRef.current;
+    if (command.type === "fit") {
+      graph.fit(undefined, 32);
+      return;
+    }
+
+    const currentZoom = graph.zoom();
+    const nextZoom = command.type === "zoom-in" ? currentZoom * 1.2 : currentZoom / 1.2;
+    graph.zoom({
+      level: Math.max(0.2, Math.min(3, nextZoom)),
+      renderedPosition: {
+        x: graph.width() / 2,
+        y: graph.height() / 2,
+      },
+    });
+  }, [command]);
 
   if (error !== null) {
     return (
@@ -132,4 +180,3 @@ export function GraphPanel(): JSX.Element {
 
   return <div className="graph-panel" ref={containerRef} aria-label="Network graph visualization" />;
 }
-

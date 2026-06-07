@@ -15,6 +15,7 @@ from app.tasks import (
     _handle_scan_error,
     _is_external_service,
     _persist_discovery_result,
+    _persist_scan_targets,
     _trigger_graph_projection,
 )
 
@@ -75,7 +76,7 @@ def _create_profile() -> ScannerProfile:
         name="test-profile",
         provider="nmap",
         description="Test profile",
-        configuration={"extra_args": ["-sV"]},
+        configuration={"scan_profile": "local_discovery"},
         is_enabled=True,
     )
 
@@ -178,6 +179,20 @@ def test_persist_discovery_result_upserts_existing_host() -> None:
     assert existing_host.hostname == "newname.local"
 
 
+def test_persist_scan_targets_creates_placeholder_host_for_ip_targets() -> None:
+    policy = _create_policy()
+    profile = _create_profile()
+    scan_run = _create_scan_run(policy, profile)
+    session = FakeSession()
+
+    _persist_scan_targets(session, scan_run)
+
+    host_added = next((item for item in session.added if isinstance(item, Host)), None)
+    assert host_added is not None
+    assert host_added.primary_ip == "10.0.1.10"
+    assert host_added.hostname is None
+
+
 def test_is_external_service_identifies_common_external_ports() -> None:
     service_ssh = MagicMock()
     service_ssh.port = 22
@@ -193,17 +208,21 @@ def test_is_external_service_identifies_common_external_ports() -> None:
 
     service_smtp = MagicMock()
     service_smtp.port = 25
-    assert _is_external_service(service_smtp) is False
+    assert _is_external_service(service_smtp) is True
+
+    service_arbitrary = MagicMock()
+    service_arbitrary.port = 12345
+    assert _is_external_service(service_arbitrary) is False
 
 
 def test_is_external_service_identifies_high_port_services() -> None:
     service_high = MagicMock()
     service_high.port = 8000
-    assert _is_external_service(service_high) is True
+    assert _is_external_service(service_high) is False
 
     service_higher = MagicMock()
     service_higher.port = 9999
-    assert _is_external_service(service_higher) is True
+    assert _is_external_service(service_higher) is False
 
 
 def test_handle_scan_error_sets_status_and_error() -> None:

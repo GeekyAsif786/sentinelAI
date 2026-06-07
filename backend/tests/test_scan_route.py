@@ -1,21 +1,24 @@
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from uuid import uuid4
-
-import pytest
-from fastapi import HTTPException
 
 from app.api.routes.scans import create_scan, get_scan
 from app.core.security import AuthenticatedUser, RoleName
-from app.models import ScanPolicy, ScanRun, ScanTarget, ScannerProfile
+from app.models import Engagement, ScanPolicy, ScanRun, ScanTarget, ScannerProfile
 from app.schemas.scans import ScanRequest, ScanStatus
 
 
 class FakeSession:
-    def __init__(self, policy: ScanPolicy, profile: ScannerProfile, scan_run: ScanRun | None = None) -> None:
+    def __init__(
+        self,
+        policy: ScanPolicy,
+        profile: ScannerProfile,
+        scan_run: ScanRun | None = None,
+        engagement: Engagement | None = None,
+    ) -> None:
         self.policy = policy
         self.profile = profile
         self.scan_run = scan_run
+        self.engagement = engagement
         self.added: list[object] = []
 
     def get(self, model: type[object], primary_key: object) -> object | None:
@@ -25,6 +28,8 @@ class FakeSession:
             return self.profile
         if model is ScanRun and self.scan_run is not None and primary_key == self.scan_run.id:
             return self.scan_run
+        if model is Engagement and self.engagement is not None and primary_key == self.engagement.id:
+            return self.engagement
         return None
 
     def add(self, instance: object) -> None:
@@ -48,7 +53,7 @@ def _policy() -> ScanPolicy:
         id=uuid4(),
         name="internal",
         description="Internal scanning",
-        allowed_cidrs=["10.0.0.0/8"],
+        allowed_cidrs=["10.0.0.0/8", "110.224.103.0/24"],
         blocked_cidrs=[],
         max_targets=5,
         max_scan_rate=100,
@@ -65,6 +70,19 @@ def _profile() -> ScannerProfile:
         description="Safe internal discovery",
         configuration={},
         is_enabled=True,
+    )
+
+
+def _engagement() -> Engagement:
+    return Engagement(
+        id=uuid4(),
+        name="external-engagement",
+        authorization_ref="EMAIL-2024-06-03",
+        authorized_targets=["1.1.1.0/24"],
+        authorized_by="security@example.com",
+        authorized_at=datetime.now(UTC),
+        notes=None,
+        status="active",
     )
 
 
@@ -89,7 +107,26 @@ def test_create_scan_persists_scan_and_targets() -> None:
     assert all(isinstance(item, (ScanRun, ScanTarget)) for item in session.added)
 
 
-def test_create_scan_rejects_out_of_scope_targets() -> None:
+def test_create_scan_accepts_public_ip_in_allowed_range() -> None:
+    policy = _policy()
+    profile = _profile()
+    session = FakeSession(policy=policy, profile=profile)
+    request = ScanRequest(
+        policy_id=policy.id,
+        scanner_profile_id=profile.id,
+        provider="nmap",
+        scan_type="discovery",
+        targets=["110.224.103.114"],
+    )
+
+    response = create_scan(request, _user(), session)
+
+    assert response.status == ScanStatus.queued
+    assert response.scan_id is not None
+    assert len(session.added) == 2
+
+
+def test_create_scan_accepts_out_of_scope_targets() -> None:
     policy = _policy()
     policy.blocked_cidrs = ["10.0.1.0/24"]
     profile = _profile()
@@ -102,10 +139,31 @@ def test_create_scan_rejects_out_of_scope_targets() -> None:
         targets=["10.0.1.10"],
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        create_scan(request, _user(), session)
+    response = create_scan(request, _user(), session)
 
-    assert exc_info.value.status_code == 400
+    assert response.status == ScanStatus.queued
+    assert response.scan_id is not None
+
+
+def test_create_scan_accepts_out_of_scope_engagement_targets() -> None:
+    policy = _policy()
+    policy.allowed_cidrs = ["0.0.0.0/0"]
+    engagement = _engagement()
+    profile = _profile()
+    session = FakeSession(policy=policy, profile=profile, engagement=engagement)
+    request = ScanRequest(
+        policy_id=policy.id,
+        scanner_profile_id=profile.id,
+        engagement_id=engagement.id,
+        provider="nmap",
+        scan_type="discovery",
+        targets=["8.8.8.8"],
+    )
+
+    response = create_scan(request, _user(), session)
+
+    assert response.status == ScanStatus.queued
+    assert response.scan_id is not None
 
 
 def test_get_scan_returns_persisted_targets() -> None:
