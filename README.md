@@ -1,6 +1,6 @@
-# AI Network Mapper
+# SentinelAI
 
-AI Network Mapper is a defensive security analytics platform for turning network scan data into asset inventory, vulnerability context, graph analysis, MITRE ATT&CK mappings, and evidence-grounded security explanations.
+SentinelAI is a defensive security analytics platform for turning network scan data into asset inventory, vulnerability context, graph analysis, MITRE ATT&CK mappings, and evidence-grounded security explanations.
 
 The project is intentionally defensive. It does not generate exploits, create payloads, harvest credentials, or execute attacks.
 
